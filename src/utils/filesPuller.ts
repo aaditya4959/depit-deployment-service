@@ -7,7 +7,7 @@ dotenv.config();
 
 // Configure AWS S3
 export const s3 = new S3Client({
-  region: process.env.AWS_REGION || "eu-north-1",
+  region: process.env.AWS_BUCKET_REGION || "eu-north-1",
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
@@ -23,6 +23,7 @@ export const pullFilesFromS3 = async (deploymentId: string) => {
 
     // 1. List objects under prefix
     const listedObjects = await s3.send(
+      // This will return all the objects under the specified prefix ( Can be made complex using some kind of promise )
       new ListObjectsV2Command({
         Bucket: bucketName,
         Prefix: prefix,

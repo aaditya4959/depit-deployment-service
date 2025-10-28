@@ -1,21 +1,22 @@
-import { ReceiveMessageCommand, DeleteMessageCommand ,SQSClient} from "@aws-sdk/client-sqs";
+import { ReceiveMessageCommand, DeleteMessageCommand, SQSClient } from "@aws-sdk/client-sqs";
 import dotenv from "dotenv";
 import { pullFilesFromS3 } from "./filesPuller.js";
-// assuming you exported sqsClient from your earlier code
+import { projectBuilder } from "./projectBuilder.js";
 
 dotenv.config();
 
+// ✅ Initialize SQS client
 const sqsClient = new SQSClient({
-    region: process.env.AWS_REGION || "us-east-1",
-    credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
-    }
-})
+  region: process.env.AWS_REGION || "us-east-1",
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+  },
+});
 
 export const pollQueue = async () => {
   if (!process.env.SQS_QUEUE_URL) {
-    throw new Error("SQS_QUEUE_URL is not defined in environment variables");
+    throw new Error("❌ SQS_QUEUE_URL is not defined in environment variables");
   }
 
   console.log("🚀 Starting SQS polling...");
@@ -25,8 +26,8 @@ export const pollQueue = async () => {
       const params = {
         QueueUrl: process.env.SQS_QUEUE_URL,
         MaxNumberOfMessages: 5, // up to 10
-        WaitTimeSeconds: 10,    // long polling (reduces API cost)
-        VisibilityTimeout: 30,  // seconds a message is hidden until processed
+        WaitTimeSeconds: 10,    // long polling
+        VisibilityTimeout: 60,  // allow time for file pull + build
       };
 
       const command = new ReceiveMessageCommand(params);
@@ -36,32 +37,45 @@ export const pollQueue = async () => {
         for (const message of response.Messages) {
           console.log("📩 Received message:", message.Body);
 
-          // ✅ Process message here
-          // e.g., call your business logic ( The function of pulling files from s3 and building them will be called here )
-          const deploymentId = message.Body; // assuming the message body contains the deployment ID
-        
-           await pullFilesFromS3(deploymentId !);
+          const deploymentId = message.Body?.trim();
+          if (!deploymentId) {
+            console.warn("⚠️ Message body is empty or invalid, skipping...");
+            continue;
+          }
 
-           // Building the project
+          try {
+            // 1️⃣ Pull project files from S3
+            console.log(`⬇️ Pulling files for deployment: ${deploymentId}`);
+            await pullFilesFromS3(deploymentId);
 
-          // ✅ Delete after processing
-          if (message.ReceiptHandle) {
-            await sqsClient.send(
-              new DeleteMessageCommand({
-                QueueUrl: process.env.SQS_QUEUE_URL!,
-                ReceiptHandle: message.ReceiptHandle,
-              })
-            );
-            console.log("✅ Deleted message:", message.MessageId);
+            // 2️⃣ Build the project
+            console.log(`🏗️ Building project for deployment: ${deploymentId}`);
+            await projectBuilder(deploymentId);
+
+            // 3️⃣ Delete message only if everything succeeded
+            if (message.ReceiptHandle) {
+              await sqsClient.send(
+                new DeleteMessageCommand({
+                  QueueUrl: process.env.SQS_QUEUE_URL,
+                  ReceiptHandle: message.ReceiptHandle,
+                })
+              );
+              console.log(`✅ Successfully processed and deleted message: ${message.MessageId}`);
+            }
+          } catch (processError) {
+            console.error(`❌ Error processing deployment ${deploymentId}:`, processError);
+            // Don't delete the message — allow for automatic retry
           }
         }
       } else {
-        console.log("⏳ No messages, waiting...");
+        console.log("⏳ No new messages... waiting for next poll.");
       }
     } catch (error) {
-      console.error("❌ Error while polling:", error);
-      // wait a little before retrying, otherwise you might flood AWS with requests
+      console.error("💥 Error while polling SQS:", error);
+      // brief delay before retrying (prevents rate-limiting)
       await new Promise((resolve) => setTimeout(resolve, 5000));
     }
   }
 };
+
+

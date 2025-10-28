@@ -1,3 +1,10 @@
 import { pollQueue } from "./utils/queuePuller.js"
+import { projectBuilder } from "./utils/projectBuilder.js";
 
-await pollQueue();
+
+async function main () {
+    while(true) {
+        await pollQueue();
+    }
+}
+main();
