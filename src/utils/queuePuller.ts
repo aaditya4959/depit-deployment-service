@@ -2,6 +2,7 @@ import { ReceiveMessageCommand, DeleteMessageCommand, SQSClient } from "@aws-sdk
 import dotenv from "dotenv";
 import { pullFilesFromS3 } from "./filesPuller.js";
 import { projectBuilder } from "./projectBuilder.js";
+import { copyFinalDist } from "./copyDist.js";
 
 dotenv.config();
 
@@ -51,6 +52,9 @@ export const pollQueue = async () => {
             // 2️⃣ Build the project
             console.log(`🏗️ Building project for deployment: ${deploymentId}`);
             await projectBuilder(deploymentId);
+
+            console.log(`Copying Build Files to S3 for deployment: ${deploymentId}`);
+            await copyFinalDist(deploymentId);
 
             // 3️⃣ Delete message only if everything succeeded
             if (message.ReceiptHandle) {
