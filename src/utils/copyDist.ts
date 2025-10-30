@@ -1,7 +1,7 @@
 import fs from "fs"
 import path from "path"
+import { S3Client, GetObjectCommand , PutObjectCommand} from "@aws-sdk/client-s3";
 import { fileURLToPath } from "url";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import dotenv from "dotenv";
 
 
